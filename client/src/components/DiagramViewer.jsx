@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import mermaid from 'mermaid';
 import ReactFlowDiagram from './ReactFlowDiagram';
+import ArchitectureFlow from './ArchitectureFlow';
 import DrawioViewer from './DrawioViewer';
 
 const TABS = [
@@ -10,7 +11,7 @@ const TABS = [
     { key: 'endpoints', label: '🌐 Endpoints' },
     { key: 'externalApis', label: '🔌 External APIs' },
     { key: 'flows', label: '🔄 Flows' },
-    { key: 'architecture', label: '🏗️ Architecture' },
+    { key: 'architecture', label: '🏗️ Architecture', isArchitectureFlow: true },
     { key: 'drawio', label: '✏️ draw.io', isDrawio: true },
 ];
 
@@ -69,6 +70,7 @@ export default function DiagramViewer({ diagrams, rawModel, importGraph }) {
     const svgRef = useRef(null);
 
     const isReactFlowTab = TABS.find((t) => t.key === activeTab)?.isReactFlow;
+    const isArchitectureFlowTab = TABS.find((t) => t.key === activeTab)?.isArchitectureFlow;
     const isDrawioTab = TABS.find((t) => t.key === activeTab)?.isDrawio;
 
     const rawCode = diagrams?.[activeTab] ? stripFences(diagrams[activeTab]) : '';
@@ -78,7 +80,7 @@ export default function DiagramViewer({ diagrams, rawModel, importGraph }) {
     const activeCode = isFlowTab && flows.length > 0 ? flows[activeFlow]?.code : rawCode;
 
     const renderDiagram = useCallback(async () => {
-        if (isReactFlowTab || isDrawioTab || showSource || !activeCode || !containerRef.current) return;
+        if (isReactFlowTab || isArchitectureFlowTab || isDrawioTab || showSource || !activeCode || !containerRef.current) return;
         setIsRendering(true);
         setRenderError(null);
 
@@ -103,7 +105,7 @@ export default function DiagramViewer({ diagrams, rawModel, importGraph }) {
         } finally {
             setIsRendering(false);
         }
-    }, [activeTab, activeCode, showSource, activeFlow, isReactFlowTab]);
+    }, [activeTab, activeCode, showSource, activeFlow, isReactFlowTab, isArchitectureFlowTab]);
 
     useEffect(() => {
         renderDiagram();
@@ -119,7 +121,9 @@ export default function DiagramViewer({ diagrams, rawModel, importGraph }) {
     const handleCopySource = async () => {
         const text = isReactFlowTab
             ? JSON.stringify(rawModel?.components || [], null, 2)
-            : activeCode;
+            : isArchitectureFlowTab
+                ? JSON.stringify(rawModel?.architectureFlow || {}, null, 2)
+                : activeCode;
         try {
             await navigator.clipboard.writeText(text);
         } catch {
@@ -172,7 +176,7 @@ export default function DiagramViewer({ diagrams, rawModel, importGraph }) {
                 {/* Toolbar */}
                 <div className="diagram-toolbar">
                     <div className="toolbar-group">
-                        {!isReactFlowTab && !isDrawioTab && (
+                        {!isReactFlowTab && !isArchitectureFlowTab && !isDrawioTab && (
                             <>
                                 <button className={`diagram-toggle-btn ${!showSource ? 'active' : ''}`} onClick={() => setShowSource(false)}>
                                     🖼️ Diagram
@@ -184,6 +188,9 @@ export default function DiagramViewer({ diagrams, rawModel, importGraph }) {
                         )}
                         {isReactFlowTab && (
                             <span className="rf-badge">⚡ Interactive · ReactFlow</span>
+                        )}
+                        {isArchitectureFlowTab && (
+                            <span className="rf-badge" style={{ borderColor: 'rgba(56, 189, 248, 0.4)', background: 'rgba(56, 189, 248, 0.08)', color: '#38bdf8' }}>💎 Enterprise Flow</span>
                         )}
                         {isDrawioTab && (
                             <span className="rf-badge" style={{ borderColor: 'rgba(247,165,27,0.4)', background: 'rgba(247,165,27,0.08)', color: '#f7a51b' }}>✏️ draw.io · Interactive Editor</span>
@@ -201,7 +208,7 @@ export default function DiagramViewer({ diagrams, rawModel, importGraph }) {
 
                     <div className="toolbar-spacer" />
 
-                    {!showSource && !isReactFlowTab && !isDrawioTab && hasData && (
+                    {!showSource && !isReactFlowTab && !isArchitectureFlowTab && !isDrawioTab && hasData && (
                         <div className="toolbar-group">
                             <button className="toolbar-icon-btn" onClick={handleZoomOut} disabled={zoom <= 0.25}>−</button>
                             <span className="zoom-label">{Math.round(zoom * 100)}%</span>
@@ -216,7 +223,7 @@ export default function DiagramViewer({ diagrams, rawModel, importGraph }) {
                                 {copyToast ? '✓ Copied' : '⎘ Copy'}
                             </button>
                         )}
-                        {!showSource && !isReactFlowTab && !isDrawioTab && hasData && svgRef.current && (
+                        {!showSource && !isReactFlowTab && !isArchitectureFlowTab && !isDrawioTab && hasData && svgRef.current && (
                             <button className="toolbar-icon-btn" onClick={handleDownloadSVG}>↓ SVG</button>
                         )}
                         <button className={`toolbar-icon-btn ${isFullscreen ? 'active' : ''}`} onClick={() => setIsFullscreen((f) => !f)}>
@@ -240,13 +247,18 @@ export default function DiagramViewer({ diagrams, rawModel, importGraph }) {
                     <ReactFlowDiagram components={components} importGraph={importGraph} />
                 )}
 
+                {/* ReactFlow Architecture canvas */}
+                {isArchitectureFlowTab && (
+                    <ArchitectureFlow rawModel={rawModel} />
+                )}
+
                 {/* Mermaid source view */}
-                {!isReactFlowTab && showSource && (
+                {!isReactFlowTab && !isArchitectureFlowTab && showSource && (
                     <pre className="diagram-source-code">{activeCode || 'No data available.'}</pre>
                 )}
 
                 {/* Mermaid rendered view */}
-                {!isReactFlowTab && !showSource && (
+                {!isReactFlowTab && !isArchitectureFlowTab && !showSource && (
                     <div className="diagram-canvas-wrap">
                         {isRendering && (
                             <div className="diagram-loading">

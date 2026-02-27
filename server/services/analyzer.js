@@ -10,6 +10,7 @@ import { generateEndpointDiagram } from '../core/generators/endpoint-diagram.js'
 import { generateExternalApiDiagram } from '../core/generators/external-api-diagram.js';
 import { generateFlowDiagram } from '../core/generators/flow-diagram.js';
 import { generateArchitectureDiagram } from '../core/generators/architecture-diagram.js';
+import { generateArchitectureJSON } from '../core/generators/architecture-json.js';
 
 const MODEL_DEFAULTS = {
     gemini: 'gemini-2.0-flash',
@@ -103,6 +104,8 @@ export async function analyzeRepo(repoPath, repoName, options, emit) {
         flows: generateFlowDiagram(model_data.dependencyFlows || []),
         architecture: generateArchitectureDiagram(model_data.architecture || {}, model_data),
     };
+    model_data.architectureFlow = generateArchitectureJSON(model_data.architecture || {}, model_data);
+
     emit('progress', { step: 'diagrams', message: 'All 7 diagrams generated', done: true });
 
     // 6. Build overview
