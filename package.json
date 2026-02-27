@@ -1,0 +1,35 @@
+{
+    "name": "codelens",
+    "version": "2.0.0",
+    "description": "AI-powered codebase analyzer — paste GitHub links, get professional technical documentation with Mermaid diagrams.",
+    "type": "module",
+    "scripts": {
+        "dev": "concurrently \"npm run server\" \"npm run client\"",
+        "server": "node server/index.js",
+        "client": "npm run dev --prefix client",
+        "build": "npm run build --prefix client",
+        "start": "npm run build && node server/index.js"
+    },
+    "keywords": [
+        "codebase",
+        "analyzer",
+        "mermaid",
+        "diagram",
+        "architecture",
+        "llm",
+        "github"
+    ],
+    "license": "MIT",
+    "dependencies": {
+        "@anthropic-ai/sdk": "^0.30.0",
+        "@google/generative-ai": "^0.21.0",
+        "chalk": "^5.3.0",
+        "concurrently": "^9.1.0",
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.0",
+        "express": "^4.21.0",
+        "glob": "^11.0.0",
+        "ignore": "^7.0.0",
+        "openai": "^4.70.0"
+    }
+}
