@@ -5,6 +5,8 @@ import crypto from 'crypto';
 import { resolveRepo, parseRepoInput } from '../services/github.js';
 import { analyzeRepo } from '../services/analyzer.js';
 import { storeSession } from './features.js';
+import { validate, SCHEMAS } from '../core/validation.js';
+import { logger } from '../core/logger.js';
 
 export const analyzeRoute = Router();
 
@@ -15,9 +17,8 @@ export const analyzeRoute = Router();
 analyzeRoute.post('/analyze', async (req, res) => {
     const { repos, provider, model, apiKey } = req.body;
 
-    if (!repos || !Array.isArray(repos) || repos.length === 0) {
-        return res.status(400).json({ error: 'repos[] is required' });
-    }
+    // Schema validation — throws ValidationError on failure
+    validate(req.body, SCHEMAS.analyze);
 
     try {
         repos.forEach((input) => parseRepoInput(input));
@@ -46,7 +47,7 @@ analyzeRoute.post('/analyze', async (req, res) => {
         emit('progress', { step: 'resolve', message: `Resolving ${repos.length} repo(s)...` });
         for (const input of repos) {
             try {
-                const repo = resolveRepo(input, (msg) => emit('progress', { step: 'resolve', message: msg }));
+                const repo = await resolveRepo(input, (msg) => emit('progress', { step: 'resolve', message: msg }));
                 resolved.push(repo);
             } catch (err) {
                 emit('progress', { step: 'resolve', message: `Failed: ${err.message}`, error: true });
@@ -63,10 +64,10 @@ analyzeRoute.post('/analyze', async (req, res) => {
             });
 
             // Capture README for drift detection
-            const readmePath = findReadme(repo.repoPath);
+            const readmePath = await findReadme(repo.repoPath);
             if (readmePath) {
                 try {
-                    readme += fs.readFileSync(readmePath, 'utf-8') + '\n\n';
+                    readme += (await fs.promises.readFile(readmePath, 'utf-8')) + '\n\n';
                 } catch {
                     // ignore read errors
                 }
@@ -100,19 +101,37 @@ analyzeRoute.post('/analyze', async (req, res) => {
 });
 
 /** Find README file in repo root */
-function findReadme(repoPath) {
+async function findReadme(repoPath) {
     const candidates = ['README.md', 'readme.md', 'Readme.md', 'README.rst', 'README.txt', 'README'];
     for (const name of candidates) {
         const p = path.join(repoPath, name);
-        if (fs.existsSync(p)) return p;
+        try {
+            await fs.promises.access(p);
+            return p;
+        } catch {
+            // ignore and try next
+        }
     }
     return null;
 }
 
 analyzeRoute.get('/health', (req, res) => {
+    const configured = [];
+    if (process.env.GEMINI_API_KEY) configured.push('gemini');
+    if (process.env.OPENAI_API_KEY) configured.push('openai');
+    if (process.env.ANTHROPIC_API_KEY) configured.push('anthropic');
+    if (process.env.GROQ_API_KEY) configured.push('groq');
+    configured.push('ollama'); // Always available (local)
+
     res.json({
         status: 'ok',
-        providers: ['gemini', 'openai', 'anthropic', 'groq', 'ollama'],
         version: '2.0.0',
+        uptime: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString(),
+        node: process.version,
+        providers: {
+            available: ['gemini', 'openai', 'anthropic', 'groq', 'ollama'],
+            configured,
+        },
     });
 });

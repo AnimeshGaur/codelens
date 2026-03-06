@@ -1,6 +1,8 @@
 import { discoverFiles, createBatches } from '../core/discovery.js';
 import { createProvider } from '../core/llm/provider.js';
 import { Analyzer } from '../core/llm/analyzer.js';
+import { AnalysisCache } from '../core/cache.js';
+import { MODEL_DEFAULTS } from '../core/config.js';
 import { aggregateResults } from '../core/aggregator.js';
 import { buildImportGraph, enrichComponentsWithImports } from '../core/import-graph.js';
 import { generateComponentDiagram } from '../core/generators/component-diagram.js';
@@ -11,14 +13,6 @@ import { generateExternalApiDiagram } from '../core/generators/external-api-diag
 import { generateFlowDiagram } from '../core/generators/flow-diagram.js';
 import { generateArchitectureDiagram } from '../core/generators/architecture-diagram.js';
 import { generateArchitectureJSON } from '../core/generators/architecture-json.js';
-
-const MODEL_DEFAULTS = {
-    gemini: 'gemini-2.0-flash',
-    openai: 'gpt-4o',
-    anthropic: 'claude-sonnet-4-20250514',
-    groq: 'llama-3.3-70b-versatile',
-    ollama: 'qwen2.5-coder',
-};
 
 /**
  * Run the full analysis pipeline on a cloned repo path.
@@ -47,7 +41,7 @@ export async function analyzeRepo(repoPath, repoName, options, emit) {
 
     // 1b. Static import graph (zero LLM — runs immediately on discovered files)
     emit('progress', { step: 'import-graph', message: 'Building static import graph...' });
-    const importGraph = buildImportGraph(files, repoPath);
+    const importGraph = await buildImportGraph(files, repoPath);
     emit('progress', {
         step: 'import-graph',
         message: `Import graph: ${importGraph.stats.relativeEdges} file edges, ${importGraph.stats.externalEdges} external packages`,
@@ -61,27 +55,27 @@ export async function analyzeRepo(repoPath, repoName, options, emit) {
     // 3. LLM analysis
     emit('progress', { step: 'analyze', message: `Analyzing ${files.length} files with ${provider}...` });
     const llm = createProvider(provider, model, options.apiKey);
-    const analyzer = new Analyzer(llm);
+    const cache = new AnalysisCache(repoPath);
+    await cache.init();
+    const analyzer = new Analyzer(llm, cache);
 
-    const batchResults = [];
-    for (let i = 0; i < batches.length; i++) {
-        emit('progress', {
-            step: 'analyze',
-            message: `Analyzing batch ${i + 1}/${batches.length}...`,
-            batch: i + 1,
-            total: batches.length,
-        });
-        try {
-            const result = await analyzer.analyzeBatch(batches[i]);
-            batchResults.push(result);
-        } catch (err) {
+    const batchResults = await analyzer.analyzeAll(batches, files, (batchIdx, totalBatches, errMessage) => {
+        if (errMessage) {
             emit('progress', {
                 step: 'analyze',
-                message: `Batch ${i + 1} failed: ${err.message}`,
+                message: `Batch ${batchIdx} failed: ${errMessage}`,
                 warning: true,
             });
+        } else {
+            emit('progress', {
+                step: 'analyze',
+                message: `Analyzing batch ${batchIdx}/${totalBatches}...`,
+                batch: batchIdx,
+                total: totalBatches,
+            });
         }
-    }
+    });
+
     emit('progress', { step: 'analyze', message: 'LLM analysis complete', done: true });
 
     // 4. Aggregate

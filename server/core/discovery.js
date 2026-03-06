@@ -1,8 +1,10 @@
 import fs from 'fs';
 import path from 'path';
-import { glob } from 'glob';
-import ignore from 'ignore';
+import { promises as fsp } from 'fs';
 import { isSourceFile, detectLanguage } from './lang-detect.js';
+
+// Convert simple glob-like ignores to array
+const DEFAULT_IGNORES = ['node_modules', '.git', '.codelens-cache', 'codelens-output', 'dist', 'build'];
 
 /**
  * Discover all source files in the given directory.
@@ -15,68 +17,77 @@ import { isSourceFile, detectLanguage } from './lang-detect.js';
 export async function discoverFiles(rootDir, config = {}) {
   const { exclude = [], include = [], maxFileSize = 50000 } = config;
 
-  // Build ignore rules from .gitignore + config excludes
-  const ig = ignore();
-
+  // Build ignore list
+  const ignoreList = new Set([...DEFAULT_IGNORES, ...exclude]);
   const gitignorePath = path.join(rootDir, '.gitignore');
-  if (fs.existsSync(gitignorePath)) {
-    const gitignoreContent = fs.readFileSync(gitignorePath, 'utf-8');
-    ig.add(gitignoreContent);
+  try {
+    const gitignoreContent = await fsp.readFile(gitignorePath, 'utf-8');
+    for (const line of gitignoreContent.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        // Very basic .gitignore parsing for directories/files
+        ignoreList.add(trimmed.replace(/\/$/, '').replace(/^\//, ''));
+      }
+    }
+  } catch {
+    // Ignore, no .gitignore config found
   }
 
-  // Always add standard ignores
-  ig.add(['node_modules/', '.git/', '.codelens-cache/', 'codelens-output/']);
-  ig.add(exclude);
-
-  // Find all files
-  const allFiles = await glob('**/*', {
-    cwd: rootDir,
-    nodir: true,
-    dot: false,
-    absolute: false,
-  });
-
-  // Filter and enrich
   const sourceFiles = [];
 
-  for (const relativePath of allFiles) {
-    // Check ignore rules
-    if (ig.ignores(relativePath)) continue;
-
-    // Check if it's a source file
-    if (!isSourceFile(relativePath)) continue;
-
-    // If include list is provided, check against it
-    if (include.length > 0) {
-      const matches = include.some(pattern => relativePath.includes(pattern));
-      if (!matches) continue;
-    }
-
-    const absolutePath = path.join(rootDir, relativePath);
-
-    // Check file size
-    let size;
+  // Recursive directory walk
+  async function walk(dir, relativeDir = '.') {
+    let entries;
     try {
-      const stat = fs.statSync(absolutePath);
-      size = stat.size;
-      if (size > maxFileSize) continue;
-      if (size === 0) continue;
+      entries = await fsp.readdir(dir, { withFileTypes: true });
     } catch {
-      continue;
+      return;
     }
 
-    const language = detectLanguage(relativePath);
-    if (!language) continue;
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') && entry.name !== '.env') continue; // Skip hidden dirs (except .env for safety)
+      if (ignoreList.has(entry.name)) continue;
 
-    sourceFiles.push({
-      path: absolutePath,
-      relativePath,
-      language,
-      size,
-      directory: path.dirname(relativePath),
-    });
+      const fullPath = path.join(dir, entry.name);
+      const relativePath = path.join(relativeDir, entry.name);
+
+      if (entry.isDirectory()) {
+        await walk(fullPath, relativePath);
+      } else if (entry.isFile()) {
+        // Check if it's a source file by extension
+        if (!isSourceFile(relativePath)) continue;
+
+        // If include list is provided, check against it
+        if (include.length > 0) {
+          const matches = include.some(pattern => relativePath.includes(pattern));
+          if (!matches) continue;
+        }
+
+        // Check file size
+        let size;
+        try {
+          const stat = await fsp.stat(fullPath);
+          size = stat.size;
+          if (size > maxFileSize || size === 0) continue;
+        } catch {
+          continue;
+        }
+
+        const language = detectLanguage(relativePath);
+        if (!language) continue;
+
+        sourceFiles.push({
+          path: fullPath,
+          relativePath,
+          language,
+          size,
+          directory: relativeDir,
+        });
+      }
+    }
   }
 
+  await walk(rootDir);
   return sourceFiles;
 }
 

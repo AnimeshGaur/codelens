@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { logger } from '../utils/logger';
 
 export default function SettingsModal({ isOpen, onClose }) {
     const [keys, setKeys] = useState({
@@ -15,7 +16,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                 try {
                     setKeys(JSON.parse(saved));
                 } catch (e) {
-                    console.error('Failed to parse API keys', e);
+                    logger.error('Failed to parse API keys in settings modal', e);
                 }
             }
         }

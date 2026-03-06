@@ -1,18 +1,10 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import OpenAI from 'openai';
-import Anthropic from '@anthropic-ai/sdk';
-
 /**
  * Factory that creates a unified LLM client, regardless of backend.
  * All providers expose the same interface: send(prompt, systemPrompt?) → string
+ * 
+ * Entirely completely zero-dependency using native Node.js fetch()
  */
 
-/**
- * Create an LLM provider instance.
- * @param {string} providerName  'gemini' | 'openai' | 'anthropic' | 'groq'
- * @param {string} model         Model identifier
- * @returns {{ send: (prompt: string, systemPrompt?: string) => Promise<string> }}
- */
 export function createProvider(providerName, model, apiKey) {
   switch (providerName) {
     case 'gemini':
@@ -32,50 +24,67 @@ export function createProvider(providerName, model, apiKey) {
   }
 }
 
-function createGeminiProvider(model, userKey) {
-  const apiKey = userKey || process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY environment variable is required');
+// ─── Shared OpenAI-Compatible Fetcher (OpenAI, Groq, Ollama) ─────────────────
 
-  const genAI = new GoogleGenerativeAI(apiKey);
+async function openAiCompatibleFetch(url, apiKey, model, prompt, systemPrompt = '') {
+  const messages = [];
+  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  messages.push({ role: 'user', content: prompt });
 
-  return {
-    name: 'gemini',
-    model,
-    async send(prompt, systemPrompt = '') {
-      const generativeModel = genAI.getGenerativeModel({
-        model,
-        systemInstruction: systemPrompt || undefined,
-      });
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey && apiKey !== 'ollama') {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
 
-      const result = await generativeModel.generateContent(prompt);
-      return result.response.text();
-    },
-  };
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`LLM API Error (${model}): ${response.status} - ${errText}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0].message.content;
 }
+
+// ─── Individual Native Providers ─────────────────────────────────────────────
 
 function createOpenAIProvider(model, userKey) {
   const apiKey = userKey || process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY environment variable is required');
-
-  const client = new OpenAI({ apiKey });
-
   return {
     name: 'openai',
     model,
-    async send(prompt, systemPrompt = '') {
-      const messages = [];
-      if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
-      messages.push({ role: 'user', content: prompt });
+    send: (p, sp) => openAiCompatibleFetch('https://api.openai.com/v1/chat/completions', apiKey, model, p, sp)
+  };
+}
 
-      const response = await client.chat.completions.create({
-        model,
-        messages,
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-      });
+function createGroqProvider(model, userKey) {
+  const apiKey = userKey || process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error('GROQ_API_KEY environment variable is required');
+  return {
+    name: 'groq',
+    model,
+    send: (p, sp) => openAiCompatibleFetch('https://api.groq.com/openai/v1/chat/completions', apiKey, model, p, sp)
+  };
+}
 
-      return response.choices[0].message.content;
-    },
+function createOllamaProvider(model) {
+  const ollamaModel = model || 'qwen2.5-coder';
+  const baseURL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1';
+  return {
+    name: 'ollama',
+    model: ollamaModel,
+    send: (p, sp) => openAiCompatibleFetch(`${baseURL}/chat/completions`, 'ollama', ollamaModel, p, sp)
   };
 }
 
@@ -83,78 +92,74 @@ function createAnthropicProvider(model, userKey) {
   const apiKey = userKey || process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY environment variable is required');
 
-  const client = new Anthropic({ apiKey });
-
   return {
     name: 'anthropic',
     model,
     async send(prompt, systemPrompt = '') {
-      const response = await client.messages.create({
-        model,
-        max_tokens: 8192,
-        system: systemPrompt || undefined,
-        messages: [{ role: 'user', content: prompt }],
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 8192,
+          system: systemPrompt || undefined,
+          messages: [{ role: 'user', content: prompt }]
+        })
       });
 
-      return response.content[0].text;
-    },
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Anthropic API Error: ${response.status} - ${errText}`);
+      }
+
+      const data = await response.json();
+      return data.content[0].text;
+    }
   };
 }
 
-function createGroqProvider(model, userKey) {
-  const apiKey = userKey || process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error('GROQ_API_KEY environment variable is required');
-
-  const client = new OpenAI({
-    apiKey,
-    baseURL: 'https://api.groq.com/openai/v1',
-  });
+function createGeminiProvider(model, userKey) {
+  const apiKey = userKey || process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY environment variable is required');
 
   return {
-    name: 'groq',
+    name: 'gemini',
     model,
     async send(prompt, systemPrompt = '') {
-      const messages = [];
-      if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
-      messages.push({ role: 'user', content: prompt });
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-      const response = await client.chat.completions.create({
-        model,
-        messages,
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
+      const payload = {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json"
+        }
+      };
+
+      if (systemPrompt) {
+        payload.systemInstruction = {
+          parts: [{ text: systemPrompt }]
+        };
+      }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
 
-      return response.choices[0].message.content;
-    },
-  };
-}
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Gemini API Error: ${response.status} - ${errText}`);
+      }
 
-function createOllamaProvider(model) {
-  const ollamaModel = model || 'qwen2.5-coder';
-  const baseURL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1';
-
-  const client = new OpenAI({
-    apiKey: 'ollama',   // Ollama doesn't need a real key but the SDK requires one
-    baseURL,
-  });
-
-  return {
-    name: 'ollama',
-    model: ollamaModel,
-    async send(prompt, systemPrompt = '') {
-      const messages = [];
-      if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
-      messages.push({ role: 'user', content: prompt });
-
-      const response = await client.chat.completions.create({
-        model: ollamaModel,
-        messages,
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-      });
-
-      return response.choices[0].message.content;
-    },
+      const data = await response.json();
+      // Gemini's response structure
+      return data.candidates[0].content.parts[0].text;
+    }
   };
 }

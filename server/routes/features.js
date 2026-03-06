@@ -8,6 +8,9 @@ import {
     generateADRs,
     computeCrossRepoMap,
 } from '../services/features.js';
+import { validate, SCHEMAS } from '../core/validation.js';
+import { asyncHandler } from '../core/errors.js';
+import { logger } from '../core/logger.js';
 
 export const featuresRoute = Router();
 
@@ -19,158 +22,114 @@ export function storeSession(id, data) {
     sessionStore.set(id, { ...data, createdAt: Date.now() });
     // Auto-cleanup after 30 minutes
     setTimeout(() => sessionStore.delete(id), 30 * 60 * 1000);
+    logger.info('Session stored', { sessionId: id, repos: data.repos?.length });
 }
 
 function getSession(id) {
     return sessionStore.get(id);
 }
 
+/** Resolve session or throw 404 */
+function requireSession(sessionId) {
+    const session = getSession(sessionId);
+    if (!session) {
+        const err = new Error('Session not found. Run an analysis first.');
+        err.statusCode = 404;
+        throw err;
+    }
+    return session;
+}
+
 /**
  * POST /api/chat
- * Body: { sessionId, question, provider?, history?: [{role, content}] }
  */
-featuresRoute.post('/chat', async (req, res) => {
-    try {
-        const { sessionId, question, provider, history } = req.body;
-        if (!sessionId || !question) {
-            return res.status(400).json({ error: 'sessionId and question are required' });
-        }
+featuresRoute.post('/chat', asyncHandler(async (req, res) => {
+    validate(req.body, SCHEMAS.chat);
+    const { sessionId, question, provider, history } = req.body;
 
-        const session = getSession(sessionId);
-        if (!session) {
-            return res.status(404).json({ error: 'Session not found. Run an analysis first.' });
-        }
-
-        // Merge all repo models into one context
-        const mergedModel = mergeModels(session.repos);
-        const answer = await chatWithCodebase(question, mergedModel, { provider, history, apiKey: session.apiKey });
-        res.json({ answer });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    const session = requireSession(sessionId);
+    const mergedModel = mergeModels(session.repos);
+    const answer = await chatWithCodebase(question, mergedModel, { provider, history, apiKey: session.apiKey });
+    res.json({ answer });
+}));
 
 /**
  * POST /api/blast-radius
- * Body: { sessionId, component, provider? }
  */
-featuresRoute.post('/blast-radius', async (req, res) => {
-    try {
-        const { sessionId, component, provider } = req.body;
-        if (!sessionId || !component) {
-            return res.status(400).json({ error: 'sessionId and component are required' });
-        }
+featuresRoute.post('/blast-radius', asyncHandler(async (req, res) => {
+    validate(req.body, SCHEMAS.blastRadius);
+    const { sessionId, component, provider } = req.body;
 
-        const session = getSession(sessionId);
-        if (!session) return res.status(404).json({ error: 'Session not found' });
-
-        const mergedModel = mergeModels(session.repos);
-        const result = await computeBlastRadius(component, mergedModel, { provider, apiKey: session.apiKey });
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    const session = requireSession(sessionId);
+    const mergedModel = mergeModels(session.repos);
+    const result = await computeBlastRadius(component, mergedModel, { provider, apiKey: session.apiKey });
+    res.json(result);
+}));
 
 /**
  * POST /api/debt-heatmap
- * Body: { sessionId, provider? }
  */
-featuresRoute.post('/debt-heatmap', async (req, res) => {
-    try {
-        const { sessionId, provider } = req.body;
-        if (!sessionId) return res.status(400).json({ error: 'sessionId is required' });
+featuresRoute.post('/debt-heatmap', asyncHandler(async (req, res) => {
+    validate(req.body, SCHEMAS.sessionOnly);
+    const { sessionId, provider } = req.body;
 
-        const session = getSession(sessionId);
-        if (!session) return res.status(404).json({ error: 'Session not found' });
-
-        const mergedModel = mergeModels(session.repos);
-        const result = await computeDebtHeatmap(mergedModel, { provider, apiKey: session.apiKey });
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    const session = requireSession(sessionId);
+    const mergedModel = mergeModels(session.repos);
+    const result = await computeDebtHeatmap(mergedModel, { provider, apiKey: session.apiKey });
+    res.json(result);
+}));
 
 /**
  * POST /api/drift
- * Body: { sessionId, provider? }
  */
-featuresRoute.post('/drift', async (req, res) => {
-    try {
-        const { sessionId, provider } = req.body;
-        if (!sessionId) return res.status(400).json({ error: 'sessionId is required' });
+featuresRoute.post('/drift', asyncHandler(async (req, res) => {
+    validate(req.body, SCHEMAS.sessionOnly);
+    const { sessionId, provider } = req.body;
 
-        const session = getSession(sessionId);
-        if (!session) return res.status(404).json({ error: 'Session not found' });
-
-        const mergedModel = mergeModels(session.repos);
-        const readme = session.readme || '';
-        const result = await detectArchitectureDrift(mergedModel, readme, { provider, apiKey: session.apiKey });
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    const session = requireSession(sessionId);
+    const mergedModel = mergeModels(session.repos);
+    const readme = session.readme || '';
+    const result = await detectArchitectureDrift(mergedModel, readme, { provider, apiKey: session.apiKey });
+    res.json(result);
+}));
 
 /**
  * POST /api/onboarding
- * Body: { sessionId, provider? }
  */
-featuresRoute.post('/onboarding', async (req, res) => {
-    try {
-        const { sessionId, provider } = req.body;
-        if (!sessionId) return res.status(400).json({ error: 'sessionId is required' });
+featuresRoute.post('/onboarding', asyncHandler(async (req, res) => {
+    validate(req.body, SCHEMAS.sessionOnly);
+    const { sessionId, provider } = req.body;
 
-        const session = getSession(sessionId);
-        if (!session) return res.status(404).json({ error: 'Session not found' });
-
-        const mergedModel = mergeModels(session.repos);
-        const result = await generateOnboardingStory(mergedModel, { provider, apiKey: session.apiKey });
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    const session = requireSession(sessionId);
+    const mergedModel = mergeModels(session.repos);
+    const result = await generateOnboardingStory(mergedModel, { provider, apiKey: session.apiKey });
+    res.json(result);
+}));
 
 /**
  * POST /api/adrs
- * Body: { sessionId, provider? }
  */
-featuresRoute.post('/adrs', async (req, res) => {
-    try {
-        const { sessionId, provider } = req.body;
-        if (!sessionId) return res.status(400).json({ error: 'sessionId is required' });
+featuresRoute.post('/adrs', asyncHandler(async (req, res) => {
+    validate(req.body, SCHEMAS.sessionOnly);
+    const { sessionId, provider } = req.body;
 
-        const session = getSession(sessionId);
-        if (!session) return res.status(404).json({ error: 'Session not found' });
-
-        const mergedModel = mergeModels(session.repos);
-        const result = await generateADRs(mergedModel, { provider, apiKey: session.apiKey });
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    const session = requireSession(sessionId);
+    const mergedModel = mergeModels(session.repos);
+    const result = await generateADRs(mergedModel, { provider, apiKey: session.apiKey });
+    res.json(result);
+}));
 
 /**
  * POST /api/cross-repo
- * Body: { sessionId }
  */
-featuresRoute.post('/cross-repo', (req, res) => {
-    try {
-        const { sessionId } = req.body;
-        if (!sessionId) return res.status(400).json({ error: 'sessionId is required' });
+featuresRoute.post('/cross-repo', asyncHandler(async (req, res) => {
+    validate(req.body, SCHEMAS.crossRepo);
+    const { sessionId } = req.body;
 
-        const session = getSession(sessionId);
-        if (!session) return res.status(404).json({ error: 'Session not found' });
-
-        const result = computeCrossRepoMap(session.repos);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    const session = requireSession(sessionId);
+    const result = computeCrossRepoMap(session.repos);
+    res.json(result);
+}));
 
 /** Merge raw models from multiple repos into one */
 function mergeModels(repos) {

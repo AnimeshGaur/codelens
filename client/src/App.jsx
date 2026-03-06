@@ -13,6 +13,7 @@ import ADRViewer from './components/ADRViewer';
 import CrossRepoMap from './components/CrossRepoMap';
 import SettingsModal from './components/SettingsModal';
 import { useAnalysis } from './hooks/useAnalysis';
+import { logger } from './utils/logger';
 
 const FEATURE_TABS = [
     { key: 'diagrams', label: '📊 Diagrams', alwaysShow: true },
@@ -29,7 +30,7 @@ const FEATURE_TABS = [
 export default function App() {
     const { analyze, isLoading, steps, results, sessionId, error, reset } = useAnalysis();
     const [activeFeature, setActiveFeature] = useState('diagrams');
-    const [provider, setProvider] = useState('ollama');
+    const [provider, setProvider] = useState('groq');
     const [showSettings, setShowSettings] = useState(false);
     const [apiKeys, setApiKeys] = useState({});
 
@@ -40,7 +41,7 @@ export default function App() {
             try {
                 setApiKeys(JSON.parse(saved));
             } catch (e) {
-                console.error(e);
+                logger.error('Failed to parse API keys from localStorage', e);
             }
         }
     }, [showSettings]); // Reload when settings close (saved)

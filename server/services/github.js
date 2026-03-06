@@ -1,7 +1,10 @@
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Determine if the input is a local path, git URL, or GitHub URL.
@@ -52,9 +55,9 @@ export function parseRepoInput(input) {
 /**
  * Resolve a repo input to a local path.
  * For git URLs, clones to a temp dir. For local paths, uses directly.
- * @returns {{ repoPath: string, repoName: string, cleanup: () => void }}
+ * @returns {Promise<{ repoPath: string, repoName: string, cleanup: () => void }>}
  */
-export function resolveRepo(input, onProgress) {
+export async function resolveRepo(input, onProgress) {
     const parsed = parseRepoInput(input);
 
     if (parsed.type === 'local') {
@@ -66,13 +69,12 @@ export function resolveRepo(input, onProgress) {
         };
     }
 
-    // Git clone
+    // Git clone (async — does not block event loop)
     const tmpDir = path.join(os.tmpdir(), `codelens-${Date.now()}-${parsed.name.replace(/\//g, '-')}`);
     onProgress?.(`Cloning ${parsed.name}...`);
 
     try {
-        execSync(`git clone --depth 1 "${parsed.cloneUrl}" "${tmpDir}"`, {
-            stdio: 'pipe',
+        await execFileAsync('git', ['clone', '--depth', '1', parsed.cloneUrl, tmpDir], {
             timeout: 120000,
         });
     } catch (err) {

@@ -63,12 +63,12 @@ export function generateClassDiagram(classes) {
         }
       }
 
-      lines.push(`${indent}}`);
-
-      // Language annotation as a note
+      // Language annotation inside the class
       if (cls.language) {
-        lines.push(`${indent}note for ${name} "${cls.language}"`);
+        lines.push(`${indent}    +String __language = "${sanitize(cls.language)}"`);
       }
+
+      lines.push(`${indent}}`);
     }
 
     if (useNamespaces) {

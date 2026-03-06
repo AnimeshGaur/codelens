@@ -1,11 +1,5 @@
 import { createProvider } from '../core/llm/provider.js';
-
-const MODEL_DEFAULTS = {
-    gemini: 'gemini-2.0-flash',
-    openai: 'gpt-4o',
-    anthropic: 'claude-sonnet-4-20250514',
-    groq: 'llama-3.3-70b-versatile',
-};
+import { MODEL_DEFAULTS } from '../core/config.js';
 
 /**
  * Feature 1: Ask the Codebase — Chat with the analyzed code model

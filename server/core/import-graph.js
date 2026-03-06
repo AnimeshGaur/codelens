@@ -7,7 +7,7 @@
  * Supports: JS, JSX, TS, TSX, MJS, CJS, Python, Java, Kotlin, Go, Ruby, PHP, C#, Rust, Swift
  */
 
-import fs from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
 
 // ─── Language import patterns ─────────────────────────────────────────────────
@@ -60,11 +60,19 @@ const PATTERNS = {
     ],
 };
 
-// Language → pattern key
+// Language → pattern key (must match values from lang-detect.js EXTENSION_MAP)
 const LANG_MAP = {
-    javascript: 'js', javascriptreact: 'js', typescript: 'js', typescriptreact: 'js',
-    python: 'python', java: 'java', kotlin: 'kotlin', go: 'go',
-    ruby: 'ruby', php: 'php', csharp: 'csharp', rust: 'rust', swift: 'swift',
+    'JavaScript': 'js', 'JavaScript (JSX)': 'js',
+    'TypeScript': 'js', 'TypeScript (TSX)': 'js',
+    'Python': 'python',
+    'Java': 'java',
+    'Kotlin': 'kotlin',
+    'Go': 'go',
+    'Ruby': 'ruby', 'Ruby (ERB)': 'ruby',
+    'PHP': 'php',
+    'C#': 'csharp',
+    'Rust': 'rust',
+    'Swift': 'swift',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -108,8 +116,8 @@ function resolveImportPath(fromFile, specifier, allFilePaths) {
  *   stats: {totalEdges, relativeEdges, externalEdges}
  * }}
  */
-export function buildImportGraph(files, repoRoot) {
-    // Build a fast lookup set of absolute paths
+export async function buildImportGraph(files, repoRoot) {
+    // Build a fast lookup set of absolute paths — O(n)
     const allFilePaths = new Set(files.map((f) => f.path));
     const relativePathMap = new Map(files.map((f) => [f.path, f.relativePath]));
 
@@ -122,19 +130,24 @@ export function buildImportGraph(files, repoRoot) {
         directory: f.directory,
     }));
 
+    // Pre-filter files that have a supported language
+    const parsableFiles = files.filter((f) => LANG_MAP[f.language]);
+
+    // Read all files concurrently — no blocking I/O
+    const readResults = await Promise.allSettled(
+        parsableFiles.map(async (f) => ({
+            file: f,
+            content: await fs.readFile(f.path, 'utf-8'),
+        }))
+    );
+
     const edges = [];
     const packageImports = new Map(); // file → Set<packageName>
 
-    for (const file of files) {
-        const langKey = LANG_MAP[file.language] || null;
-        if (!langKey) continue;
-
-        let content;
-        try {
-            content = fs.readFileSync(file.path, 'utf-8');
-        } catch {
-            continue;
-        }
+    for (const result of readResults) {
+        if (result.status !== 'fulfilled') continue;
+        const { file, content } = result.value;
+        const langKey = LANG_MAP[file.language];
 
         const patterns = getPatterns(langKey, content);
         const filePackages = new Set();
@@ -189,15 +202,39 @@ function getPatterns(langKey, content) {
         return PATTERNS[langKey] || [];
     }
 
-    // For Go, only match inside import ( ... ) blocks or standalone import "..."
-    const goPatterns = [];
-    const importBlocks = [
-        ...content.matchAll(/^import\s+"([^"]+)"/gm),
-        ...content.matchAll(/^\s+"([^"]+)"/gm),  // lines inside import ( ) block
-    ];
-    // Return a pre-processed "virtual" pattern by yielding static matches
-    // encoded as a fake regex that won't advance
-    return [];  // Go handled separately below — minimal stub
+    // For Go, parse import blocks and standalone imports
+    // Go has: import "path" and import ( "path1"  "path2" ... )
+    const goMatches = [];
+
+    // Standalone: import "pkg/path"
+    const standaloneRe = /^import\s+"([^"]+)"/gm;
+    let match;
+    while ((match = standaloneRe.exec(content)) !== null) {
+        goMatches.push(match[1]);
+    }
+
+    // Multi-import block: import ( "pkg1" \n "pkg2" ... )
+    const blockRe = /^import\s*\(([\s\S]*?)\)/gm;
+    while ((match = blockRe.exec(content)) !== null) {
+        const blockBody = match[1];
+        const lineRe = /^\s*(?:\w+\s+)?"([^"]+)"/gm;
+        let lineMatch;
+        while ((lineMatch = lineRe.exec(blockBody)) !== null) {
+            goMatches.push(lineMatch[1]);
+        }
+    }
+
+    // Return a fake regex that yields our pre-parsed matches
+    // by creating a stateful iterator that mimics regex.exec() behavior
+    let idx = 0;
+    const fakeRegex = {
+        lastIndex: 0,
+        exec() {
+            if (idx >= goMatches.length) return null;
+            return [null, goMatches[idx++]];
+        },
+    };
+    return [fakeRegex];
 }
 
 /**

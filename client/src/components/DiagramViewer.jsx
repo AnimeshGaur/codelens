@@ -3,6 +3,7 @@ import mermaid from 'mermaid';
 import ReactFlowDiagram from './ReactFlowDiagram';
 import ArchitectureFlow from './ArchitectureFlow';
 import DrawioViewer from './DrawioViewer';
+import { logger } from '../utils/logger';
 
 const TABS = [
     { key: 'component', label: '📦 Components', isReactFlow: true },
@@ -99,7 +100,7 @@ export default function DiagramViewer({ diagrams, rawModel, importGraph }) {
                 svgEl.removeAttribute('width');
             }
         } catch (err) {
-            console.warn('Mermaid render failed:', err);
+            logger.warn('Mermaid render failed', { error: err.message, tab: activeTab });
             setRenderError(err.message);
             svgRef.current = null;
         } finally {

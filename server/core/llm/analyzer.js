@@ -1,6 +1,7 @@
 import fs from 'fs';
-import chalk from 'chalk';
 import { buildAnalysisPrompt, buildOverviewPrompt } from './prompts.js';
+import { minifyAST } from '../ast-parser.js';
+import { logger } from '../logger.js';
 
 /**
  * LLM-powered code analyzer.
@@ -24,11 +25,15 @@ export class Analyzer {
    * @returns {Promise<object>} Parsed JSON analysis result
    */
   async analyzeBatch(files) {
-    // Read file contents
-    const filesWithContent = files.map(f => ({
-      relativePath: f.relativePath,
-      language: f.language,
-      content: fs.readFileSync(f.path, 'utf-8'),
+    // Read and minify file contents
+    const filesWithContent = await Promise.all(files.map(async f => {
+      const rawContent = await fs.promises.readFile(f.path, 'utf-8');
+      const minifiedContent = await minifyAST(rawContent, f.language);
+      return {
+        relativePath: f.relativePath,
+        language: f.language,
+        content: minifiedContent,
+      };
     }));
 
     const { userPrompt, systemPrompt } = buildAnalysisPrompt(filesWithContent);
@@ -52,11 +57,12 @@ export class Analyzer {
    * Analyze all files with batching, caching, and progress reporting.
    * @param {Array<Array>} batches  Array of file batches from createBatches()
    * @param {Array} allFiles        All discovered files (for caching)
+   * @param {Function} onProgress   Optional callback for SSE updates
    * @returns {Promise<Array<object>>} Array of analysis results per batch
    */
-  async analyzeAll(batches, allFiles) {
+  async analyzeAll(batches, allFiles, onProgress = null) {
     // Check cache for individual files
-    const { uncached, cachedResults } = this.cache.filterUncached(allFiles);
+    const { uncached, cachedResults } = await this.cache.filterUncached(allFiles);
 
     // Re-batch only uncached files
     const uncachedSet = new Set(uncached.map(f => f.path));
@@ -68,24 +74,22 @@ export class Analyzer {
     const cachedCount = allFiles.length - uncached.length;
 
     if (cachedCount > 0) {
-      console.log(chalk.green(`  ✓ ${cachedCount} files loaded from cache`));
+      logger.info(`Loaded files from cache`, { count: cachedCount });
     }
 
     if (totalBatches === 0) {
-      console.log(chalk.green('  ✓ All files cached, no LLM calls needed'));
+      logger.info('All files cached, no LLM calls needed');
       return [...cachedResults.values()];
     }
 
-    console.log(
-      chalk.blue(`  ⟳ Analyzing ${uncached.length} files in ${totalBatches} batch(es)...\n`),
-    );
+    logger.info(`Starting LLM analysis`, { uncached: uncached.length, batches: totalBatches });
 
     const results = [...cachedResults.values()];
 
     for (let i = 0; i < filteredBatches.length; i++) {
       const batch = filteredBatches[i];
       const fileNames = batch.map(f => f.relativePath).join(', ');
-      console.log(chalk.dim(`  [${i + 1}/${totalBatches}] Analyzing: ${fileNames}`));
+      logger.info(`Analyzing batch`, { batch: i + 1, total: totalBatches, files: fileNames });
 
       try {
         const result = await this.analyzeBatch(batch);
@@ -93,17 +97,19 @@ export class Analyzer {
 
         // Cache results per file in batch
         for (const file of batch) {
-          this.cache.set(file.path, result);
+          await this.cache.set(file.path, result);
         }
 
-        console.log(chalk.green(`  ✓ Batch ${i + 1} complete`));
+        logger.info(`Batch complete`, { batch: i + 1 });
+        if (onProgress) onProgress(i + 1, totalBatches, null);
 
         // Rate limit: small delay between batches
         if (i < filteredBatches.length - 1) {
           await this._delay(1000);
         }
       } catch (err) {
-        console.error(chalk.red(`  ✗ Batch ${i + 1} failed: ${err.message}`));
+        logger.error(`Batch failed`, { batch: i + 1, error: err.message });
+        if (onProgress) onProgress(i + 1, totalBatches, err.message);
         // Continue with remaining batches
       }
     }
@@ -128,9 +134,7 @@ export class Analyzer {
           : this.retryDelayMs * attempt;
 
         if (attempt < this.maxRetries) {
-          console.log(
-            chalk.yellow(`  ⚠ Retry ${attempt}/${this.maxRetries} in ${delay}ms: ${err.message}`),
-          );
+          logger.warn(`LLM API Retry scheduled`, { attempt, maxRetries: this.maxRetries, delayMs: delay, error: err.message });
           await this._delay(delay);
         }
       }

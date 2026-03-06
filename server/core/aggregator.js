@@ -1,6 +1,7 @@
 /**
  * Aggregates per-batch LLM analysis results into a unified codebase model.
- * Deduplicates and resolves cross-file relationships.
+ *
+ * All deduplication uses Map/Set lookups — O(n) total, not O(n²).
  */
 
 /**
@@ -17,108 +18,116 @@ export function aggregateResults(batchResults) {
     externalAPIs: [],
     dependencyFlows: [],
     architecture: {
-      patterns: [],
-      techStack: { languages: [], frameworks: [], databases: [], messageBrokers: [], other: [] },
+      patterns: new Set(),
+      techStack: { languages: new Set(), frameworks: new Set(), databases: new Set(), messageBrokers: new Set(), other: new Set() },
       securitySurface: {
         authMechanism: 'None identified',
-        protectedEndpoints: [],
-        unprotectedEndpoints: [],
-        dbWritePaths: [],
+        protectedEndpoints: new Set(),
+        unprotectedEndpoints: new Set(),
+        dbWritePaths: new Set(),
       },
       summary: '',
     },
   };
 
+  // O(1) lookup maps for deduplication
+  const componentMap = new Map();     // name → component
+  const classKeys = new Set();        // "name|file"
+  const dbModelKeys = new Set();      // "name|tableName"
+  const endpointKeys = new Set();     // "method|path"
+  const externalApiKeys = new Set();  // "service|url"
+  const flowKeys = new Set();         // name
+
   for (const result of batchResults) {
     if (!result || typeof result !== 'object') continue;
 
-    // Merge components
+    // Merge components — O(n)
     if (Array.isArray(result.components)) {
       for (const comp of result.components) {
-        const existing = model.components.find(c => c.name === comp.name);
+        const existing = componentMap.get(comp.name);
         if (existing) {
-          // Merge dependencies and files into existing
-          existing.dependencies = uniqueArray([
-            ...existing.dependencies,
-            ...(comp.dependencies || []),
-          ]);
-          existing.files = uniqueArray([...existing.files, ...(comp.files || [])]);
+          // Merge dependencies using Set for O(1) dedup
+          const depSet = new Set(existing.dependencies);
+          for (const d of comp.dependencies || []) depSet.add(d);
+          existing.dependencies = [...depSet];
+
+          const fileSet = new Set(existing.files);
+          for (const f of comp.files || []) fileSet.add(f);
+          existing.files = [...fileSet];
         } else {
-          model.components.push({ ...comp });
+          const entry = { ...comp };
+          componentMap.set(comp.name, entry);
+          model.components.push(entry);
         }
       }
     }
 
-    // Merge classes (dedupe by name + file)
+    // Merge classes — O(n) using composite key
     if (Array.isArray(result.classes)) {
       for (const cls of result.classes) {
-        const exists = model.classes.some(c => c.name === cls.name && c.file === cls.file);
-        if (!exists) {
+        const key = `${cls.name}|${cls.file}`;
+        if (!classKeys.has(key)) {
+          classKeys.add(key);
           model.classes.push({ ...cls });
         }
       }
     }
 
-    // Merge database models
+    // Merge database models — O(n)
     if (result.database?.models && Array.isArray(result.database.models)) {
       for (const dbModel of result.database.models) {
-        const exists = model.database.models.some(
-          m => m.name === dbModel.name || m.tableName === dbModel.tableName,
-        );
-        if (!exists) {
+        const key = `${dbModel.name}|${dbModel.tableName}`;
+        if (!dbModelKeys.has(key)) {
+          dbModelKeys.add(key);
           model.database.models.push({ ...dbModel });
         }
       }
     }
 
-    // Merge endpoints (dedupe by method + path)
+    // Merge endpoints — O(n)
     if (Array.isArray(result.endpoints)) {
       for (const ep of result.endpoints) {
-        const exists = model.endpoints.some(e => e.method === ep.method && e.path === ep.path);
-        if (!exists) {
+        const key = `${ep.method}|${ep.path}`;
+        if (!endpointKeys.has(key)) {
+          endpointKeys.add(key);
           model.endpoints.push({ ...ep });
         }
       }
     }
 
-    // Merge external APIs (dedupe by service + url)
+    // Merge external APIs — O(n)
     if (Array.isArray(result.externalAPIs)) {
       for (const api of result.externalAPIs) {
-        const exists = model.externalAPIs.some(a => a.service === api.service && a.url === api.url);
-        if (!exists) {
+        const key = `${api.service}|${api.url}`;
+        if (!externalApiKeys.has(key)) {
+          externalApiKeys.add(key);
           model.externalAPIs.push({ ...api });
         }
       }
     }
 
-    // Merge dependency flows
+    // Merge dependency flows — O(n)
     if (Array.isArray(result.dependencyFlows)) {
       for (const flow of result.dependencyFlows) {
-        const exists = model.dependencyFlows.some(f => f.name === flow.name);
-        if (!exists) {
+        if (!flowKeys.has(flow.name)) {
+          flowKeys.add(flow.name);
           model.dependencyFlows.push({ ...flow });
         }
       }
     }
 
-    // Merge architecture info
+    // Merge architecture info — O(n) via Set
     if (result.architecture) {
       const arch = result.architecture;
 
       if (Array.isArray(arch.patterns)) {
-        model.architecture.patterns = uniqueArray([
-          ...model.architecture.patterns,
-          ...arch.patterns,
-        ]);
+        for (const p of arch.patterns) if (p) model.architecture.patterns.add(p);
       }
 
       if (arch.techStack) {
         for (const key of ['languages', 'frameworks', 'databases', 'messageBrokers', 'other']) {
           if (Array.isArray(arch.techStack[key])) {
-            model.architecture.techStack[key] = uniqueArray([
-              ...model.architecture.techStack[key],
-              ...arch.techStack[key],
-            ]);
+            for (const item of arch.techStack[key]) if (item) model.architecture.techStack[key].add(item);
           }
         }
       }
@@ -129,34 +138,30 @@ export function aggregateResults(batchResults) {
           model.architecture.securitySurface.authMechanism = sec.authMechanism;
         }
         if (Array.isArray(sec.protectedEndpoints)) {
-          model.architecture.securitySurface.protectedEndpoints = uniqueArray([
-            ...model.architecture.securitySurface.protectedEndpoints,
-            ...sec.protectedEndpoints,
-          ]);
+          for (const e of sec.protectedEndpoints) if (e) model.architecture.securitySurface.protectedEndpoints.add(e);
         }
         if (Array.isArray(sec.unprotectedEndpoints)) {
-          model.architecture.securitySurface.unprotectedEndpoints = uniqueArray([
-            ...model.architecture.securitySurface.unprotectedEndpoints,
-            ...sec.unprotectedEndpoints,
-          ]);
+          for (const e of sec.unprotectedEndpoints) if (e) model.architecture.securitySurface.unprotectedEndpoints.add(e);
         }
         if (Array.isArray(sec.dbWritePaths)) {
-          model.architecture.securitySurface.dbWritePaths = uniqueArray([
-            ...model.architecture.securitySurface.dbWritePaths,
-            ...sec.dbWritePaths,
-          ]);
+          for (const p of sec.dbWritePaths) if (p) model.architecture.securitySurface.dbWritePaths.add(p);
         }
       }
 
       if (arch.summary) {
-        model.architecture.summary = arch.summary; // Last one wins
+        model.architecture.summary = arch.summary;
       }
     }
   }
 
-  return model;
-}
+  // Convert Sets back to Arrays for the final model
+  model.architecture.patterns = [...model.architecture.patterns];
+  for (const key of ['languages', 'frameworks', 'databases', 'messageBrokers', 'other']) {
+    model.architecture.techStack[key] = [...model.architecture.techStack[key]];
+  }
+  model.architecture.securitySurface.protectedEndpoints = [...model.architecture.securitySurface.protectedEndpoints];
+  model.architecture.securitySurface.unprotectedEndpoints = [...model.architecture.securitySurface.unprotectedEndpoints];
+  model.architecture.securitySurface.dbWritePaths = [...model.architecture.securitySurface.dbWritePaths];
 
-function uniqueArray(arr) {
-  return [...new Set(arr.filter(Boolean))];
+  return model;
 }
