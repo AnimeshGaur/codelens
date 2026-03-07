@@ -5,7 +5,7 @@
  * Entirely completely zero-dependency using native Node.js fetch()
  */
 
-export function createProvider(providerName, model, apiKey) {
+export function createProvider(providerName, model, apiKey, options = {}) {
   switch (providerName) {
     case 'gemini':
       return createGeminiProvider(model, apiKey);
@@ -16,7 +16,7 @@ export function createProvider(providerName, model, apiKey) {
     case 'groq':
       return createGroqProvider(model, apiKey);
     case 'ollama':
-      return createOllamaProvider(model);
+      return createOllamaProvider(model, options);
     default:
       throw new Error(
         `Unknown LLM provider: ${providerName}. Supported: gemini, openai, anthropic, groq, ollama`,
@@ -78,9 +78,9 @@ function createGroqProvider(model, userKey) {
   };
 }
 
-function createOllamaProvider(model) {
-  const ollamaModel = model || 'qwen2.5-coder';
-  const baseURL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1';
+function createOllamaProvider(model, options = {}) {
+  const ollamaModel = options.ollamaModel || model || 'qwen2.5-coder';
+  const baseURL = options.ollamaBaseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1';
   return {
     name: 'ollama',
     model: ollamaModel,

@@ -54,7 +54,10 @@ export async function analyzeRepo(repoPath, repoName, options, emit) {
 
     // 3. LLM analysis
     emit('progress', { step: 'analyze', message: `Analyzing ${files.length} files with ${provider}...` });
-    const llm = createProvider(provider, model, options.apiKey);
+    const llm = createProvider(provider, model, options.apiKey, {
+        ollamaBaseUrl: options.ollamaBaseUrl,
+        ollamaModel: options.ollamaModel,
+    });
     const cache = new AnalysisCache(repoPath);
     await cache.init();
     const analyzer = new Analyzer(llm, cache);

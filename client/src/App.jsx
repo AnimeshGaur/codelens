@@ -32,19 +32,6 @@ export default function App() {
     const [activeFeature, setActiveFeature] = useState('diagrams');
     const [provider, setProvider] = useState('groq');
     const [showSettings, setShowSettings] = useState(false);
-    const [apiKeys, setApiKeys] = useState({});
-
-    // Load keys on mount
-    useEffect(() => {
-        const saved = localStorage.getItem('codelens_api_keys');
-        if (saved) {
-            try {
-                setApiKeys(JSON.parse(saved));
-            } catch (e) {
-                logger.error('Failed to parse API keys from localStorage', e);
-            }
-        }
-    }, [showSettings]); // Reload when settings close (saved)
 
     const hasResults = results && results.repos && results.repos.length > 0;
     const isMultiRepo = hasResults && results.repos.length > 1;
@@ -104,11 +91,9 @@ export default function App() {
         ? [...new Set(results.repos.flatMap((r) => (r.rawModel?.components || []).map((c) => c.name || c.module).filter(Boolean)))]
         : [];
 
-    const handleAnalyze = (repos, prov) => {
+    const handleAnalyze = (repos, prov, key, ollamaConfig = {}) => {
         setProvider(prov);
-        // Use the key for the selected provider
-        const key = apiKeys[prov] || '';
-        analyze(repos, prov, key);
+        analyze(repos, prov, key, ollamaConfig);
     };
 
     return (

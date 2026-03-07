@@ -19,7 +19,7 @@ export function useAnalysis() {
         setError(null);
     }, []);
 
-    const analyze = useCallback(async (repos, provider, apiKey) => {
+    const analyze = useCallback(async (repos, provider, apiKey, ollamaConfig = {}) => {
         setIsLoading(true);
         setSteps([]);
         setResults(null);
@@ -30,7 +30,7 @@ export function useAnalysis() {
             const response = await fetch('/api/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ repos, provider, apiKey }),
+                body: JSON.stringify({ repos, provider, apiKey, ...ollamaConfig }),
             });
 
             if (!response.ok) {

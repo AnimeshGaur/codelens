@@ -1,0 +1,10 @@
+node_modules/
+node_modules_quarantined/
+client/node_modules/
+.git/
+.env
+codelens-server.log
+codelens-output/
+client/dist/
+.codelens-cache/
+/tmp/codelens_run/

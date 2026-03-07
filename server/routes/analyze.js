@@ -15,7 +15,7 @@ export const analyzeRoute = Router();
  * Body: { repos: ["/local/path", "https://github.com/user/repo", "git@..."], provider?, model?, apiKey? }
  */
 analyzeRoute.post('/analyze', async (req, res) => {
-    const { repos, provider, model, apiKey } = req.body;
+    const { repos, provider, model, apiKey, ollamaBaseUrl, ollamaModel } = req.body;
 
     // Schema validation — throws ValidationError on failure
     validate(req.body, SCHEMAS.analyze);
@@ -73,7 +73,7 @@ analyzeRoute.post('/analyze', async (req, res) => {
                 }
             }
 
-            const result = await analyzeRepo(repo.repoPath, repo.repoName, { provider, model, apiKey }, emit);
+            const result = await analyzeRepo(repo.repoPath, repo.repoName, { provider, model, apiKey, ollamaBaseUrl, ollamaModel }, emit);
             results.push(result);
 
             emit('progress', {

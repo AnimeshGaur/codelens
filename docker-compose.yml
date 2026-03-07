@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  codelens:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: codelens_prod
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      # Note: Secure API Keys should generally NOT be hardcoded in compose files for production VPS deployments,
+      # but they can be passed in here locally during testing, or mapped via an external .env file.
+      # - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # - GROQ_API_KEY=${GROQ_API_KEY}
+      # - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    volumes:
+      # Optional: Persist the structured JSON logs outside the container
+      - ./codelens-server.log:/app/codelens-server.log
+      # Optional: Persist the LLM Analysis Cache
+      - /tmp/.codelens-cache:/tmp/.codelens-cache

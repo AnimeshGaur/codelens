@@ -4,11 +4,13 @@
     "description": "AI-powered codebase analyzer — paste GitHub links, get professional technical documentation with Mermaid diagrams.",
     "type": "module",
     "scripts": {
+        "install:all": "npm install && cd client && npm install",
         "dev": "concurrently \"npm run server\" \"npm run client\"",
         "server": "node server/index.js",
         "client": "npm run dev --prefix client",
         "build": "npm run build --prefix client",
-        "start": "bash start.sh"
+        "start": "npm run build && node server/index.js",
+        "postinstall": "cd client && npm install"
     },
     "keywords": [
         "codebase",
