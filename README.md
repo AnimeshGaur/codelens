@@ -114,6 +114,42 @@ codelens/
 └── start.sh                 # Quick start script
 ```
 
+## 🔌 VS Code Extension (Copilot Edition)
+
+CodeLens also comes as a fully integrated VS Code extension using **GitHub Copilot Chat** as the LLM interface (no API keys required!).
+
+### Developer Setup
+
+1. Open the `codelens` workspace in VS Code.
+2. Navigate to the extension folder and install dependencies:
+   ```bash
+   cd vscode-extension
+   npm install --cache /tmp/npm-ext-cache
+   ```
+3. Press **F5** to start debugging. This will compile the TypeScript extension (via `.vscode/launch.json`) and open a new Extension Development Host window.
+4. In the new window, open any project folder and press `Ctrl+Shift+P` → **"CodeLens: Analyze Workspace"**.
+
+---
+
+## 📁 Project Structure
+
+```
+codelens/
+├── client/                  # React frontend (Vite)
+├── server/                  # Express backend
+│   ├── core/                # Core modules (llm, generators, discovery)
+│   └── routes/              # API route handlers
+├── vscode-extension/        # GitHub Copilot VS Code Extension
+│   ├── src/                 # Extension source code
+│   ├── package.json         # Extension manifest
+│   └── tsconfig.json        # TypeScript config
+├── .vscode/                 # VS Code workspace configs (launch.json)
+├── package.json
+├── Dockerfile               # Production container
+├── docker-compose.yml       # Container orchestration
+└── start.sh                 # Quick start script
+```
+
 ---
 
 ## 🐳 Docker
