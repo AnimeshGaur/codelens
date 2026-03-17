@@ -1,0 +1,53 @@
+{
+    "name": "codelens-copilot",
+    "displayName": "CodeLens — Copilot Edition",
+    "description": "AI-powered codebase analyzer using GitHub Copilot. Generates interactive architecture diagrams and technical documentation directly inside VS Code.",
+    "version": "1.0.0",
+    "publisher": "AnimeshGaur",
+    "engines": {
+        "vscode": "^1.90.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "icon": "icon.png",
+    "activationEvents": [],
+    "main": "./out/extension.js",
+    "extensionDependencies": [
+        "github.copilot-chat"
+    ],
+    "contributes": {
+        "commands": [
+            {
+                "command": "codelens.analyzeWorkspace",
+                "title": "CodeLens: Analyze Workspace",
+                "icon": "$(search)"
+            },
+            {
+                "command": "codelens.analyzeFolder",
+                "title": "CodeLens: Analyze Folder...",
+                "icon": "$(folder-opened)"
+            }
+        ],
+        "menus": {
+            "explorer/context": [
+                {
+                    "command": "codelens.analyzeFolder",
+                    "when": "explorerResourceIsFolder",
+                    "group": "navigation"
+                }
+            ]
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "lint": "eslint src"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.90.0",
+        "@types/node": "^20.0.0",
+        "typescript": "^5.4.0"
+    }
+}
