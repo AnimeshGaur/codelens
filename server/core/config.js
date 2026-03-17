@@ -25,7 +25,7 @@ const MODEL_DEFAULTS = {
   openai: 'gpt-4o',
   anthropic: 'claude-sonnet-4-20250514',
   groq: 'llama-3.3-70b-versatile',
-  ollama: 'qwen2.5-coder',
+  ollama: 'gemma3n',
 };
 
 /**

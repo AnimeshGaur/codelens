@@ -1,9 +1,9 @@
 /**
  * Factory that creates a unified LLM client, regardless of backend.
  * All providers expose the same interface: send(prompt, systemPrompt?) → string
- * 
- * Entirely completely zero-dependency using native Node.js fetch()
  */
+
+import { Ollama } from 'ollama';
 
 export function createProvider(providerName, model, apiKey, options = {}) {
   switch (providerName) {
@@ -79,12 +79,33 @@ function createGroqProvider(model, userKey) {
 }
 
 function createOllamaProvider(model, options = {}) {
-  const ollamaModel = options.ollamaModel || model || 'qwen2.5-coder';
+  const ollamaModel = options.ollamaModel || model || 'gemma3n';
   const baseURL = options.ollamaBaseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1';
+
+  // Extract host from baseURL since UI might send /v1
+  const host = baseURL.replace(/\/v1\/?$/, '');
+  const ollama = new Ollama({ host });
+
   return {
     name: 'ollama',
     model: ollamaModel,
-    send: (p, sp) => openAiCompatibleFetch(`${baseURL}/chat/completions`, 'ollama', ollamaModel, p, sp)
+    async send(p, sp) {
+      const messages = [];
+      if (sp) messages.push({ role: 'system', content: sp });
+      messages.push({ role: 'user', content: p });
+
+      let fullResponse = '';
+      const response = await ollama.chat({
+        model: ollamaModel,
+        messages: messages,
+        stream: true,
+      });
+
+      for await (const part of response) {
+        fullResponse += part.message.content;
+      }
+      return fullResponse;
+    }
   };
 }
 

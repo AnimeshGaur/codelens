@@ -13,7 +13,7 @@ export default function RepoInput({ onAnalyze, isLoading }) {
     const [provider, setProvider] = useState('ollama');
     const [apiKey, setApiKey] = useState('');
     const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434/v1');
-    const [ollamaModel, setOllamaModel] = useState('qwen2.5-coder');
+    const [ollamaModel, setOllamaModel] = useState('gemma3n');
 
     // Load previously saved keys from localStorage per provider
     useEffect(() => {
@@ -121,7 +121,7 @@ export default function RepoInput({ onAnalyze, isLoading }) {
                             className="config-input"
                             value={ollamaModel}
                             onChange={(e) => setOllamaModel(e.target.value)}
-                            placeholder="qwen2.5-coder, llama3, mistral, etc."
+                            placeholder="gemma3n, llama3, mistral, etc."
                             disabled={isLoading}
                         />
                     </div>

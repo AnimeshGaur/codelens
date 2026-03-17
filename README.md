@@ -74,7 +74,7 @@ API keys can be entered **directly in the UI** when you analyze a project — no
 ### Using Ollama (Local LLM)
 
 1. Install Ollama: `curl -fsSL https://ollama.ai/install.sh | sh`
-2. Pull a model: `ollama pull qwen2.5-coder`
+2. Pull a model: `ollama pull gemma3n`
 3. Select "Ollama (Local LLM)" in the CodeLens UI
 4. Configure Base URL and Model Name in the UI
 
